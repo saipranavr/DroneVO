@@ -4,6 +4,7 @@ import numpy as np # Needed for converting points later
 import matplotlib
 matplotlib.use('Agg') # Use Agg backend for non-interactive plotting to buffer
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D # Import for 3D plotting
 import io # For plot buffer
 
 def detect_features(frame, detector):
@@ -96,8 +97,9 @@ def process_video(video_path):
     current_t = np.zeros((3, 1)) # Initial translation is zero
     # prev_draw_x, prev_draw_y = -1, -1 # No longer needed for drawing on frame
 
-    # --- Matplotlib Setup for Plotting to Buffer ---
-    fig, ax = plt.subplots(figsize=(6, 6)) # Adjust figsize as needed
+    # --- Matplotlib Setup for 3D Plotting to Buffer ---
+    fig = plt.figure(figsize=(6, 6)) # Adjust figsize as needed
+    ax = fig.add_subplot(111, projection='3d')
     # ---------------------------------------------
 
     # Define target display size (adjust as needed)
@@ -149,19 +151,25 @@ def process_video(video_path):
 
             # --- Render Matplotlib Plot to Image Buffer ---
             plot_img = None
+            # --- Render Matplotlib 3D Plot to Image Buffer ---
+            plot_img = None
             if len(trajectory_points) > 1:
                 trajectory_array = np.array(trajectory_points)
                 x_coords = trajectory_array[:, 0]
+                y_coords = trajectory_array[:, 1] # Use Y coordinate
                 z_coords = trajectory_array[:, 2]
 
                 ax.cla() # Clear previous plot
-                ax.plot(x_coords, z_coords, marker='.', linestyle='-', markersize=2, label='Trajectory')
+                ax.plot(x_coords, y_coords, z_coords, marker='.', linestyle='-', markersize=2, label='Trajectory') # Plot X, Y, Z
                 ax.set_xlabel("X")
-                ax.set_ylabel("Z")
-                ax.set_title("Estimated Trajectory (Top-Down)")
+                ax.set_ylabel("Y") # Set Y label
+                ax.set_zlabel("Z") # Set Z label
+                ax.set_title("Estimated Camera Trajectory (3D)")
                 # ax.legend(loc='upper left') # Optional legend
                 ax.grid(True)
-                ax.axis('equal')
+                # Setting equal aspect ratio in 3D can be tricky, might need manual limits
+                # ax.set_aspect('equal') # May not work well in 3D
+                # Auto-scaling usually works better for 3D
 
                 # Use Agg backend to draw plot to buffer
                 buf = io.BytesIO()
