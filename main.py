@@ -1,6 +1,7 @@
 import cv2
 import sys
 import numpy as np # Needed for converting points later
+import matplotlib.pyplot as plt # Re-import for plotting
 
 def detect_features(frame, detector):
     """Detects keypoints and computes descriptors for a given frame."""
@@ -90,9 +91,12 @@ def process_video(video_path):
     trajectory_points = [np.array([0.0, 0.0, 0.0])] # Start at origin
     current_R = np.eye(3) # Initial rotation is identity
     current_t = np.zeros((3, 1)) # Initial translation is zero
-    # trajectory = np.zeros((600, 600, 3), dtype=np.uint8) # For drawing trajectory
-    # current_pose_R = np.eye(3)
-    # current_pose_t = np.zeros((3, 1))
+    # prev_draw_x, prev_draw_y = -1, -1 # No longer needed for drawing on frame
+
+    # --- Matplotlib Setup for Real-time Plotting ---
+    plt.ion() # Turn on interactive mode
+    fig, ax = plt.subplots(figsize=(8, 6))
+    # ---------------------------------------------
 
     while True:
         ret, frame = cap.read()
@@ -129,44 +133,50 @@ def process_video(video_path):
             current_R = R @ current_R # Update rotation (Note: R is rotation from prev to current)
 
             # Store the new position
-            trajectory_points.append(current_t.flatten())
+            current_pos = current_t.flatten()
+            trajectory_points.append(current_pos)
 
-            current_pos_str = f"X:{current_t[0,0]:.2f}, Y:{current_t[1,0]:.2f}, Z:{current_t[2,0]:.2f}"
+            current_pos_str = f"X:{current_pos[0]:.2f}, Y:{current_pos[1]:.2f}, Z:{current_pos[2]:.2f}"
             print(f"Processing frame: {frame_count}, Keypoints: {len(kp)}, Matches: {len(good_matches)}, Pose Estimated: Yes, Pos: [{current_pos_str}]")
 
-            # --- Draw Trajectory (Example - Needs refinement for scale/visualization) ---
-            # x, y, z = current_t.flatten()
-            # draw_x, draw_y = int(x*scale_factor) + 300, int(z*scale_factor) + 100 # Apply scale factor for drawing
-            # cv2.circle(trajectory, (draw_x, draw_y), 1, (0, 255, 0), 1)
-            # cv2.imshow('Trajectory', trajectory)
-            # -----------------------------------------------------------------------
+            # --- Update Real-time Plot ---
+            if len(trajectory_points) > 1:
+                trajectory_array = np.array(trajectory_points)
+                x_coords = trajectory_array[:, 0]
+                z_coords = trajectory_array[:, 2]
+
+                ax.cla() # Clear previous plot
+                ax.plot(x_coords, z_coords, marker='o', linestyle='-', markersize=3, label='Estimated Trajectory (Top-Down View)')
+                ax.set_xlabel("X Position")
+                ax.set_ylabel("Z Position (Forward)")
+                ax.set_title("Estimated Camera Trajectory (Real-time)")
+                ax.legend(loc='upper left')
+                ax.grid(True)
+                ax.axis('equal')
+                plt.pause(0.01) # Pause briefly to allow plot update
+            # -----------------------------
         else:
-            print(f"Processing frame: {frame_count}, Keypoints: {len(kp)}, Matches: {len(good_matches)}, Pose Estimated: No")
+             print(f"Processing frame: {frame_count}, Keypoints: {len(kp)}, Matches: {len(good_matches)}, Pose Estimated: No")
+
+        # Display the original video frame
+        cv2.imshow('Video', frame)
 
         # Store current frame data for the next iteration (regardless of pose estimation success)
         prev_kp = kp
         prev_desc = desc
 
-        # Optional: Draw matches for visualization
-        # if frame_count > 1 and prev_gray is not None:
-        #     img_matches = cv2.drawMatches(prev_gray, prev_kp, gray_frame, kp, good_matches, None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
-        #     cv2.imshow('Matches', img_matches)
-        #     if cv2.waitKey(1) & 0xFF == ord('q'):
-        #         break
-        # prev_gray = gray_frame # Store current gray frame for next iteration's drawing
-
-        # Optional: Draw keypoints for visualization
-        # frame_with_keypoints = cv2.drawKeypoints(frame, kp, None, color=(0,255,0), flags=0)
-        # cv2.imshow('Frame with Keypoints', frame_with_keypoints)
-        # if cv2.waitKey(1) & 0xFF == ord('q'): # Press 'q' to quit display
-        #     break
+        # Exit loop if 'q' is pressed
+        if cv2.waitKey(30) & 0xFF == ord('q'): # Adjust delay (e.g., 1 for max speed, 30 for ~30fps)
+             break
         # -----------------------------------------
 
-    # Release the video capture object
+    # Release the video capture object and destroy windows
     cap.release()
-    # cv2.destroyAllWindows() # Uncomment if using cv2.imshow
-
+    cv2.destroyAllWindows()
+    plt.ioff() # Turn off interactive mode
     print(f"\nFinished processing video. Total frames: {frame_count}")
+    print("Close the plot window to exit.")
+    plt.show() # Keep the final plot window open
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
