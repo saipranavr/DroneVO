@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 
-export CONDA_ENV_NAME=exercise_correction-env
+export CONDA_ENV_NAME=drone-vo
 echo $CONDA_ENV_NAME
 
-conda create -n $CONDA_ENV_NAME python=3.9
+# Remove existing environment if it exists, ignore errors if it doesn't
+conda remove -n $CONDA_ENV_NAME --all -y || true
+
+# Create the environment with Python and install packages using conda, automatically confirming
+# Pulling opencv from conda-forge channel
+conda create -n $CONDA_ENV_NAME python=3.9 numpy matplotlib opencv -c conda-forge -y
 
 eval "$(conda shell.bash hook)"
 conda activate $CONDA_ENV_NAME
@@ -11,6 +16,4 @@ conda activate $CONDA_ENV_NAME
 which python
 which pip
 
-pip install -r requirements.txt
-
-# conda activate exercise_correction-env
+# conda activate drone-vo
