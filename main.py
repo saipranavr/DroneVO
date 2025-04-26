@@ -1,7 +1,10 @@
 import cv2
 import sys
 import numpy as np # Needed for converting points later
-import matplotlib.pyplot as plt # Re-import for plotting
+import matplotlib
+matplotlib.use('Agg') # Use Agg backend for non-interactive plotting to buffer
+import matplotlib.pyplot as plt
+import io # For plot buffer
 
 def detect_features(frame, detector):
     """Detects keypoints and computes descriptors for a given frame."""
@@ -93,10 +96,12 @@ def process_video(video_path):
     current_t = np.zeros((3, 1)) # Initial translation is zero
     # prev_draw_x, prev_draw_y = -1, -1 # No longer needed for drawing on frame
 
-    # --- Matplotlib Setup for Real-time Plotting ---
-    plt.ion() # Turn on interactive mode
-    fig, ax = plt.subplots(figsize=(8, 6))
+    # --- Matplotlib Setup for Plotting to Buffer ---
+    fig, ax = plt.subplots(figsize=(6, 6)) # Adjust figsize as needed
     # ---------------------------------------------
+
+    # Define target display size (adjust as needed)
+    display_height = 480
 
     while True:
         ret, frame = cap.read()
@@ -111,6 +116,9 @@ def process_video(video_path):
 
         # Match features with the previous frame
         good_matches, pts1, pts2 = match_features(prev_kp, prev_desc, kp, desc, bf)
+
+        # Initialize plot image for this iteration
+        plot_img = None
 
         # Estimate pose if enough good matches are found
         R, t, pose_mask = None, None, None
@@ -139,27 +147,64 @@ def process_video(video_path):
             current_pos_str = f"X:{current_pos[0]:.2f}, Y:{current_pos[1]:.2f}, Z:{current_pos[2]:.2f}"
             print(f"Processing frame: {frame_count}, Keypoints: {len(kp)}, Matches: {len(good_matches)}, Pose Estimated: Yes, Pos: [{current_pos_str}]")
 
-            # --- Update Real-time Plot ---
+            # --- Render Matplotlib Plot to Image Buffer ---
+            plot_img = None
             if len(trajectory_points) > 1:
                 trajectory_array = np.array(trajectory_points)
                 x_coords = trajectory_array[:, 0]
                 z_coords = trajectory_array[:, 2]
 
                 ax.cla() # Clear previous plot
-                ax.plot(x_coords, z_coords, marker='o', linestyle='-', markersize=3, label='Estimated Trajectory (Top-Down View)')
-                ax.set_xlabel("X Position")
-                ax.set_ylabel("Z Position (Forward)")
-                ax.set_title("Estimated Camera Trajectory (Real-time)")
-                ax.legend(loc='upper left')
+                ax.plot(x_coords, z_coords, marker='.', linestyle='-', markersize=2, label='Trajectory')
+                ax.set_xlabel("X")
+                ax.set_ylabel("Z")
+                ax.set_title("Estimated Trajectory (Top-Down)")
+                # ax.legend(loc='upper left') # Optional legend
                 ax.grid(True)
                 ax.axis('equal')
-                plt.pause(0.01) # Pause briefly to allow plot update
-            # -----------------------------
+
+                # Use Agg backend to draw plot to buffer
+                buf = io.BytesIO()
+                fig.savefig(buf, format='png', dpi=fig.dpi)
+                buf.seek(0)
+                plot_img_np = np.frombuffer(buf.getvalue(), dtype=np.uint8)
+                buf.close()
+                plot_img = cv2.imdecode(plot_img_np, cv2.IMREAD_COLOR)
+            # ------------------------------------------
+
         else:
              print(f"Processing frame: {frame_count}, Keypoints: {len(kp)}, Matches: {len(good_matches)}, Pose Estimated: No")
+             # Ensure plot_img remains None if pose estimation failed
+             plot_img = None
 
-        # Display the original video frame
-        cv2.imshow('Video', frame)
+        # --- Combine Video Frame and Plot Image ---
+        # Resize frame
+        frame_aspect_ratio = width / height
+        frame_display_width = int(display_height * frame_aspect_ratio)
+        resized_frame = cv2.resize(frame, (frame_display_width, display_height))
+
+        # Create placeholder if plot not ready, else resize plot
+        if plot_img is None:
+            # Use a black placeholder if plot isn't generated yet (e.g., first frame)
+            plot_display_width = display_height # Assume square plot for placeholder
+            resized_plot = np.zeros((display_height, plot_display_width, 3), dtype=np.uint8)
+        else:
+            plot_height, plot_width, _ = plot_img.shape
+            plot_aspect_ratio = plot_width / plot_height
+            plot_display_width = int(display_height * plot_aspect_ratio)
+            resized_plot = cv2.resize(plot_img, (plot_display_width, display_height))
+
+        # Create combined image canvas
+        total_width = frame_display_width + plot_display_width
+        combined_display = np.zeros((display_height, total_width, 3), dtype=np.uint8)
+
+        # Place resized frame and plot side-by-side
+        combined_display[0:display_height, 0:frame_display_width] = resized_frame
+        combined_display[0:display_height, frame_display_width:total_width] = resized_plot
+
+        # Display the combined image
+        cv2.imshow('Visual Odometry Dashboard', combined_display)
+        # ------------------------------------------
 
         # Store current frame data for the next iteration (regardless of pose estimation success)
         prev_kp = kp
@@ -173,10 +218,8 @@ def process_video(video_path):
     # Release the video capture object and destroy windows
     cap.release()
     cv2.destroyAllWindows()
-    plt.ioff() # Turn off interactive mode
+    plt.close(fig) # Close the matplotlib figure
     print(f"\nFinished processing video. Total frames: {frame_count}")
-    print("Close the plot window to exit.")
-    plt.show() # Keep the final plot window open
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
