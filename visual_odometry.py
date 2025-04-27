@@ -93,6 +93,7 @@ class VO_Processor:
         self.trajectory_points = [np.array([0.0, 0.0, 0.0])]
         self.current_R = np.eye(3)
         self.current_t = np.zeros((3, 1))
+        # self.pose_updates_since_plot = 0 # Counter for plot updates - REMOVED
 
         # Plotting setup
         self.fig = plt.figure(figsize=(6, 6))
@@ -110,7 +111,8 @@ class VO_Processor:
     def _update_plot(self):
         """Renders the current trajectory plot to an image buffer (thread-safe)."""
         with self._plot_lock:
-            if len(self.trajectory_points) > 1:
+            # Only start plotting the line after a few points for stability
+            if len(self.trajectory_points) > 5: # Changed from > 1 to > 5
                 trajectory_array = np.array(self.trajectory_points)
                 x = trajectory_array[:, 0]
                 y = trajectory_array[:, 1]
@@ -132,10 +134,24 @@ class VO_Processor:
                 buf.close()
                 self.current_plot_img = cv2.imdecode(plot_img_np, cv2.IMREAD_COLOR)
             else:
-                # Create a placeholder if no points yet
-                placeholder = np.zeros((int(self.fig.dpi*6), int(self.fig.dpi*6), 3), dtype=np.uint8)
-                cv2.putText(placeholder, "Waiting for data...", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-                self.current_plot_img = placeholder
+                # Render a blank plot if not enough points yet
+                self.ax.cla() # Clear the axes
+                self.ax.set_xlabel("X")
+                self.ax.set_ylabel("Y")
+                self.ax.set_zlabel("Z")
+                self.ax.set_title("Estimated Trajectory (3D)")
+                self.ax.grid(True)
+                # Set limits to prevent auto-scaling issues with no data
+                self.ax.set_xlim([-1, 1])
+                self.ax.set_ylim([-1, 1])
+                self.ax.set_zlim([-1, 1])
+
+                buf = io.BytesIO()
+                self.fig.savefig(buf, format='png', dpi=self.fig.dpi)
+                buf.seek(0)
+                plot_img_np = np.frombuffer(buf.getvalue(), dtype=np.uint8)
+                buf.close()
+                self.current_plot_img = cv2.imdecode(plot_img_np, cv2.IMREAD_COLOR)
 
 
     def process_frame(self, frame):
@@ -164,8 +180,12 @@ class VO_Processor:
             self.current_t = self.current_t + self.current_R @ t_normalized
             self.current_R = R @ self.current_R
             self.trajectory_points.append(self.current_t.flatten())
+            # self.pose_updates_since_plot += 1 - REMOVED
 
+            # Update plot only every N pose updates to reduce frequency - REMOVED Condition
+            # if self.pose_updates_since_plot >= 5: - REMOVED
             self._update_plot() # Update plot image buffer
+                # self.pose_updates_since_plot = 0 - REMOVED
 
         # Update status dictionary
         current_pos = self.current_t.flatten()
@@ -203,6 +223,7 @@ class VO_Processor:
         self.trajectory_points = [np.array([0.0, 0.0, 0.0])]
         self.current_R = np.eye(3)
         self.current_t = np.zeros((3, 1))
+        # self.pose_updates_since_plot = 0 # Reset counter on new run - REMOVED
         self._update_plot() # Initialize plot
 
         while not self._stop_event.is_set():
