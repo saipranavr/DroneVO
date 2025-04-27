@@ -7,8 +7,8 @@ echo $CONDA_ENV_NAME
 conda remove -n $CONDA_ENV_NAME --all -y || true
 
 # Create the environment with Python and install packages using conda, automatically confirming
-# Pulling opencv from conda-forge channel
-conda create -n $CONDA_ENV_NAME python=3.9 numpy matplotlib opencv -c conda-forge -y
+# Pulling opencv and flask from conda-forge channel
+conda create -n $CONDA_ENV_NAME python=3.9 numpy matplotlib opencv flask -c conda-forge -y
 
 eval "$(conda shell.bash hook)"
 conda activate $CONDA_ENV_NAME

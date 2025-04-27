@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visual Odometry HMI</title>
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        .container { display: flex; flex-wrap: wrap; gap: 20px; }
+        .controls, .status, .outputs { margin-bottom: 20px; padding: 15px; border: 1px solid #ccc; border-radius: 5px; }
+        .outputs { display: flex; gap: 10px; align-items: flex-start; }
+        .outputs img { max-width: 640px; height: auto; border: 1px solid #eee; }
+        #status-info span { display: inline-block; min-width: 150px; margin-bottom: 5px; }
+        button { padding: 8px 15px; margin-right: 10px; cursor: pointer; }
+        #message { margin-top: 10px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Visual Odometry HMI</h1>
+
+    <div class="container">
+        <div class="controls">
+            <h2>Controls</h2>
+            <form id="upload-form" enctype="multipart/form-data">
+                <label for="videoFile">Select Video File:</label>
+                <input type="file" id="videoFile" name="videoFile" accept="video/*" required>
+                <button type="submit" id="startBtn">Start Processing</button>
+            </form>
+            <button id="stopBtn" disabled>Stop Processing</button>
+            <div id="message"></div>
+        </div>
+
+        <div class="status">
+            <h2>Status</h2>
+            <div id="status-info">
+                <span>Processing Status: <strong id="runningStatus">Idle</strong></span><br>
+                <span>Current Frame: <strong id="frameNumber">0</strong></span><br>
+                <span>Keypoints: <strong id="keypointsCount">0</strong></span><br>
+                <span>Good Matches: <strong id="matchesCount">0</strong></span><br>
+                <span>Pose Estimated: <strong id="poseStatus">No</strong></span><br>
+                <span>Position (X, Y, Z): [<strong id="posX">0.00</strong>, <strong id="posY">0.00</strong>, <strong id="posZ">0.00</strong>]</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="outputs">
+        <div>
+            <h3>Video Feed</h3>
+            <img id="videoFeed" src="" alt="Video Feed">
+        </div>
+        <div>
+            <h3>Trajectory Plot (3D)</h3>
+            <img id="trajectoryPlot" src="" alt="Trajectory Plot">
+        </div>
+    </div>
+
+    <script>
+        // JavaScript will go here
+        const uploadForm = document.getElementById('upload-form');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const messageDiv = document.getElementById('message');
+        const videoFeedImg = document.getElementById('videoFeed');
+        const trajectoryPlotImg = document.getElementById('trajectoryPlot');
+        const runningStatusSpan = document.getElementById('runningStatus');
+        const frameNumberSpan = document.getElementById('frameNumber');
+        const keypointsCountSpan = document.getElementById('keypointsCount');
+        const matchesCountSpan = document.getElementById('matchesCount');
+        const poseStatusSpan = document.getElementById('poseStatus');
+        const posXSpan = document.getElementById('posX');
+        const posYSpan = document.getElementById('posY');
+        const posZSpan = document.getElementById('posZ');
+
+        let statusInterval;
+
+        // --- Form Submission (Start Processing) ---
+        uploadForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            messageDiv.textContent = 'Uploading and starting...';
+            startBtn.disabled = true;
+            stopBtn.disabled = true; // Disable stop until we confirm start
+
+            const formData = new FormData(uploadForm);
+
+            try {
+                const response = await fetch('/start_processing', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const result = await response.json();
+
+                if (response.ok) {
+                    messageDiv.textContent = `Processing started for ${result.filename}.`;
+                    stopBtn.disabled = false; // Enable stop button
+                    // Start polling for status and updating feeds
+                    startStatusUpdates();
+                    videoFeedImg.src = '/video_feed?' + new Date().getTime(); // Add timestamp to prevent caching
+                    trajectoryPlotImg.src = '/trajectory_plot?' + new Date().getTime();
+                } else {
+                    messageDiv.textContent = `Error: ${result.error || 'Unknown error'}`;
+                    startBtn.disabled = false; // Re-enable start on error
+                }
+            } catch (error) {
+                messageDiv.textContent = `Network Error: ${error}`;
+                startBtn.disabled = false;
+            }
+        });
+
+        // --- Stop Processing ---
+        stopBtn.addEventListener('click', async () => {
+            messageDiv.textContent = 'Stopping processing...';
+            stopBtn.disabled = true; // Disable while stopping
+
+            try {
+                const response = await fetch('/stop_processing', { method: 'POST' });
+                const result = await response.json();
+                messageDiv.textContent = result.message;
+                stopStatusUpdates(); // Stop polling
+                startBtn.disabled = false; // Re-enable start button
+                runningStatusSpan.textContent = 'Idle';
+            } catch (error) {
+                messageDiv.textContent = `Network Error: ${error}`;
+                // Decide if stop button should be re-enabled based on error
+            }
+        });
+
+        // --- Status Polling ---
+        function updateStatus() {
+            fetch('/status')
+                .then(response => response.json())
+                .then(data => {
+                    runningStatusSpan.textContent = data.is_running ? 'Running' : 'Idle';
+                    frameNumberSpan.textContent = data.frame;
+                    keypointsCountSpan.textContent = data.kp;
+                    matchesCountSpan.textContent = data.matches;
+                    poseStatusSpan.textContent = data.pose;
+                    posXSpan.textContent = data.x.toFixed(2);
+                    posYSpan.textContent = data.y.toFixed(2);
+                    posZSpan.textContent = data.z.toFixed(2);
+
+                    // If process stopped on backend, update UI state
+                    if (!data.is_running && statusInterval) {
+                        stopStatusUpdates();
+                        startBtn.disabled = false;
+                        stopBtn.disabled = true;
+                        messageDiv.textContent = messageDiv.textContent.includes('started') ? 'Processing finished or stopped.' : messageDiv.textContent;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching status:', error);
+                    // Optionally stop polling on error or show error message
+                    // stopStatusUpdates();
+                    // messageDiv.textContent = 'Error updating status.';
+                });
+        }
+
+        function startStatusUpdates() {
+            stopStatusUpdates(); // Clear any existing interval
+            // Update immediately, then set interval
+            updateStatus();
+            statusInterval = setInterval(updateStatus, 1000); // Poll every second
+            // Refresh images periodically (less often than status)
+            // Note: Using timestamp forces reload, alternative is JS image reload logic
+            // videoFeedImg.src = '/video_feed?' + new Date().getTime(); // Already set on start
+            trajectoryPlotImg.src = '/trajectory_plot?' + new Date().getTime(); // Refresh plot
+        }
+
+        function stopStatusUpdates() {
+            if (statusInterval) {
+                clearInterval(statusInterval);
+                statusInterval = null;
+            }
+        }
+
+        // Initial state check in case server restarted while processing
+        // updateStatus(); // Maybe call on page load
+
+    </script>
+</body>
+</html>
