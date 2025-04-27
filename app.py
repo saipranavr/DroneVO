@@ -27,7 +27,7 @@ from visual_odometry import VO_Processor
 
 # --- Configuration ---
 UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'mp4', 'avi', 'mov', 'mkv'} # Add video extensions as needed
+ALLOWED_EXTENSIONS = {'mp4', 'avi', 'mov', 'mkv', 'gif'} # Add video extensions as needed, added gif
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
